@@ -72,6 +72,7 @@ void printCursorTokens(CXTranslationUnit translation_unit, CXCursor cursor) {
 CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
     CXCursorKind cursor_kind = clang_getCursorKind(cursor);
     CXString cursor_spelling = clang_getCursorSpelling(cursor);
+
     if (cursor_kind == CXCursor_FunctionDecl)
     {
         CXSourceLocation location = clang_getCursorLocation(cursor);
@@ -80,7 +81,9 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         clang_getPresumedLocation(location, &filename, &line, &col);
         printf("%s:%d:%d ", clang_getCString(filename), line, col);
 
-        printf("%s(", clang_getCString(cursor_spelling));
+        CXType return_type = clang_getCursorResultType(cursor);
+        CXString return_spelling = clang_getTypeKindSpelling(return_type.kind);
+        printf("%s %s(", clang_getCString(return_spelling), clang_getCString(cursor_spelling));
 
         int num_params = 0;
         clang_visitChildren(cursor, *functionDeclVisitor, &num_params);
@@ -89,6 +92,7 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
 
         return CXChildVisit_Continue;
     }
+
     return CXChildVisit_Recurse;
 }
 
