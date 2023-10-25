@@ -86,8 +86,8 @@ void printFunctions(FunctionVec& functions) {
                 // fn.args[0].arg_name.c_str());
             for (int i = 1; i < fn.args.size(); ++i) {
                 printf(", %s",
-                    fn.args[i].arg_name.c_str());
-                    // fn.args[i].arg_type.c_str());
+                    fn.args[i].arg_type.c_str());
+                    // fn.args[i].arg_name.c_str());
             }
         }
         printf(")\n");
