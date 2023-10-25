@@ -1,3 +1,5 @@
+# install dependencies (Ubuntu/Debian): `apt install libclang-dev`
+
 CXX=clang
 CFLAGS=-I/usr/lib/llvm-10/include/
 LDFLAGS=-lclang

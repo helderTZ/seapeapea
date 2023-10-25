@@ -7,8 +7,6 @@
 #include <clang-c/Platform.h>
 
 void printDiagnostics(CXTranslationUnit translationUnit);
-void printTokenInfo(CXTranslationUnit translationUnit,CXToken currentToken);
-void printCursorTokens(CXTranslationUnit translationUnit,CXCursor currentCursor);
 
 CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
 CXChildVisitResult functionDeclVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
@@ -29,46 +27,6 @@ void printDiagnostics(CXTranslationUnit translation_unit) {
     }
 }
 
-void printTokenInfo(CXTranslationUnit translation_unit, CXToken token) {
-    CXString token_str = clang_getTokenSpelling(translation_unit, token);
-    CXTokenKind token_kind = clang_getTokenKind(token);
-
-    switch(token_kind) {
-        case CXToken_Comment:
-            printf("Token COMMENT     : %s\n", clang_getCString(token_str));
-            break;
-        case CXToken_Identifier:
-            printf("Token IDENTIFIER  : %s\n", clang_getCString(token_str));
-            break;
-        case CXToken_Keyword:
-            printf("Token KEYWORD     : %s\n", clang_getCString(token_str));
-            break;
-        case CXToken_Literal:
-            printf("Token LITERAL     : %s\n", clang_getCString(token_str));
-            break;
-        case CXToken_Punctuation:
-            printf("Token PUNCTUATION : %s\n", clang_getCString(token_str));
-            break;
-        default:
-            fprintf(stderr, "ERROR: Could not parse token: %s\n", clang_getCString(token_str));
-            break;
-    }
-}
-
-void printCursorTokens(CXTranslationUnit translation_unit, CXCursor cursor) {
-    unsigned int num_tokens;
-    CXToken* tokens;
-
-    CXSourceRange source_range = clang_getCursorExtent(cursor);
-    clang_tokenize(translation_unit, source_range, &tokens, &num_tokens);
-
-    for (int i = 0; i < num_tokens; ++i) {
-        printTokenInfo(translation_unit, tokens[i]);
-    }
-
-    clang_disposeTokens(translation_unit, tokens, num_tokens);
-}
-
 CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
     CXCursorKind cursor_kind = clang_getCursorKind(cursor);
     CXString cursor_spelling = clang_getCursorSpelling(cursor);
@@ -79,6 +37,12 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         CXString filename;
         unsigned int line, col;
         clang_getPresumedLocation(location, &filename, &line, &col);
+
+        // skip included headers
+        if (clang_Location_isFromMainFile(clang_getCursorLocation(cursor)) == 0) {
+            return CXChildVisit_Continue;
+        }
+
         printf("%s:%d:%d ", clang_getCString(filename), line, col);
 
         CXType return_type = clang_getCursorResultType(cursor);
@@ -146,7 +110,6 @@ int main(int argc, char** argv) {
     printDiagnostics(translation_unit);
 
     CXCursor root_cursor = clang_getTranslationUnitCursor(translation_unit);
-    // printCursorTokens(translation_unit, root_cursor);
 
     unsigned int res = clang_visitChildren(root_cursor, *cursorVisitor, 0);
 
