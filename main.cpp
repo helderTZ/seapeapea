@@ -89,8 +89,8 @@ void printFunctions(FunctionVec& functions) {
                     fn.args[i].arg_name.c_str());
                     // fn.args[i].arg_type.c_str());
             }
-            printf(")\n");
         }
+        printf(")\n");
     }
 }
 
@@ -109,7 +109,6 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         if (clang_Location_isFromMainFile(clang_getCursorLocation(cursor)) == 0) {
             return CXChildVisit_Continue;
         }
-
 
         CXType return_type = clang_getCursorResultType(cursor);
         CXString return_spelling = clang_getTypeKindSpelling(return_type.kind);
