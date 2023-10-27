@@ -388,9 +388,9 @@ int main(int argc, char** argv) {
     //                        unsigned options);
     CXTranslationUnit translation_unit = clang_parseTranslationUnit(
         index,
-        argv[1],
-        &(argv[2]),
-        argc-2,
+        filename.c_str(),
+        NULL,
+        0,
         NULL,
         0,
         CXTranslationUnit_None);
