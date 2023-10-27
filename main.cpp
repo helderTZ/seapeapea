@@ -356,11 +356,18 @@ int scoreComp(std::pair<std::string, int> a, std::pair<std::string, int> b) {
     return a.second < b.second;
 }
 
-std::string bestMatch(FunctionScores& scores) {
+std::string bestMatch(const FunctionScores& scores) {
     return (*std::min_element(
                 scores.begin(),
                 scores.end(),
                 scoreComp)).first;
+}
+
+std::vector<std::pair<std::string, int>> sortScores(FunctionScores& scores) {
+    std::vector<std::pair<std::string, int>> sorted(scores.begin(), scores.end());
+    std::sort(sorted.begin(), sorted.end(),
+        [](auto& a, auto& b){ return a.second < b.second; });
+    return sorted;
 }
 
 int main(int argc, char** argv) {
@@ -407,7 +414,11 @@ int main(int argc, char** argv) {
     // printStructs(entities.structs);
 
     FunctionScores scores = functionScores(entities.functions, query);
-    printf("%s\n", bestMatch(scores).c_str());
+    auto sorted_scores = sortScores(scores);
+    for (int i = 0; i < 10; ++i) {
+        printf("%s\n", sorted_scores[i].first.c_str());
+    }
+    // printf("%s\n", bestMatch(scores).c_str());
 
     clang_disposeTranslationUnit(translation_unit);
     clang_disposeIndex(index);
