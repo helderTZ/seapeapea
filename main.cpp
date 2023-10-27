@@ -2,8 +2,13 @@
 // Adapted from: https://gist.github.com/raphaelmor/3150866
 
 #include <cstdio>
+#include <climits>
+#include <cstring>
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <string_view>
+#include <algorithm>
 
 #include <clang-c/Index.h>
 #include <clang-c/Platform.h>
@@ -18,12 +23,16 @@ struct SourceLoc {
     unsigned int line;
     unsigned int col;
 
-    SourceLoc();
+    SourceLoc() = default;
 
     SourceLoc(const char* filename_,
               unsigned int line_,
               unsigned int col_)
     : filename(filename_), line(line_), col(col_) {}
+
+    std::string repr() const {
+        return filename + ":" + std::to_string(line) + ":" + std::to_string(col) + ":";
+    }
 };
 
 struct Function {
@@ -32,7 +41,7 @@ struct Function {
     std::string function_name;
     std::vector<Arg> args;
 
-    Function();
+    Function() = default;
 
     Function(const char* filename_,
              unsigned int line_,
@@ -46,11 +55,39 @@ struct Function {
     void add_arg(const char* arg_name, const char* arg_type) {
         args.push_back(Arg{arg_name, arg_type});
     }
+
+    std::string repr() const {
+        std::string representation = function_name + " :: " + return_type + "(";
+        if (args.size() > 0) {
+            representation += args[0].arg_type;
+        }
+        for(int i = 1; i < args.size(); ++i) {
+            representation += ", " + args[i].arg_type;
+        }
+        representation += ")";
+        return representation;
+    }
+
+    std::string full_repr() const {
+        return source.repr() + " " + repr();
+    }
+
+    std::string normal() const {
+        std::string representation = return_type + "(";
+        if (args.size() > 0) {
+            representation += args[0].arg_type;
+        }
+        for(int i = 1; i < args.size(); ++i) {
+            representation += ", " + args[i].arg_type;
+        }
+        representation += ")";
+        return representation;
+    }
 };
 
 struct Typedef {
 
-    Typedef();
+    Typedef() = default;
 
     Typedef(const char* filename_,
             unsigned int line_,
@@ -75,7 +112,7 @@ struct Struct {
     std::string struct_name;
     std::vector<Attribute> attributes;
 
-    Struct();
+    Struct() = default;
 
     Struct(const char* filename_,
            unsigned int line_,
@@ -92,6 +129,7 @@ struct Struct {
 typedef std::vector<Function> FunctionVec;
 typedef std::vector<Typedef> TypedefVec;
 typedef std::vector<Struct> StructVec;
+typedef std::unordered_map<std::string, int> FunctionScores;
 
 struct EntityAggregate {
     FunctionVec functions;
@@ -104,7 +142,6 @@ typename T::value_type* last(T* container) {
     return &*std::prev((*container).end());
 }
 
-void printDiagnostics(CXTranslationUnit translationUnit);
 CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
 CXChildVisitResult functionDeclVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
 CXChildVisitResult attributeDeclVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
@@ -114,19 +151,13 @@ void printTypedefs(TypedefVec& typedefs);
 void printStructs(StructVec& structs);
 
 void usage(char** argv) {
-    printf("USAGE: %s [srcfiles] [compiler flags]\n", argv[0]);
-}
-
-void printDiagnostics(CXTranslationUnit translation_unit) {
-    int num_diag = clang_getNumDiagnostics(translation_unit);
-    printf("There are %d diagnostics\n", num_diag);
-
-    for (unsigned int diag_idx = 0; diag_idx < num_diag; ++diag_idx) {
-        CXDiagnostic diagnostic = clang_getDiagnostic(translation_unit, diag_idx);
-        CXString err_str = clang_formatDiagnostic(diagnostic, clang_defaultDiagnosticDisplayOptions());
-        printf("%s\n", clang_getCString(err_str));
-        clang_disposeString(err_str);
-    }
+    printf("USAGE: %s <srcfile> [-f|-t|-s] [query]\n", argv[0]);
+    printf("            srcfile : source or header file to search in\n");
+    printf("            -f      : search for functions\n");
+    printf("            -t      : search for typedefs\n");
+    printf("            -s      : search for structs\n");
+    printf("            query   : the query to search for\n");
+    printf("If no query is provided, just print\n");
 }
 
 void printLocation(SourceLoc& loc) {
@@ -281,12 +312,66 @@ CXChildVisitResult attributeDeclVisitor(CXCursor cursor, CXCursor parent, CXClie
     return CXChildVisit_Continue;
 }
 
-int main(int argc, char** argv) {
+template<typename... Ts>
+auto min(Ts... ts) {
+    return std::min({std::forward<Ts>(ts)...});
+}
 
-    if (argc < 2) {
+/** Calculate the Levenshtein distance */
+int lev(std::string_view a, std::string_view b) {
+    int n = a.size();
+    int m = b.size();
+    int distance[n+1][m+1];
+    std::memset(distance, 0, sizeof(int)*(n+1)*(m+1));
+
+    // initialize first row and first column
+    for (int i = 0; i < n+1; ++i) { distance[i][0] = i; }
+    for (int j = 0; j < m+1; ++j) { distance[0][j] = j; }
+
+    for (int i = 1; i < n+1; ++i) {
+        for (int j = 1; j < m+1; ++j) {
+            if (a[i-1] == b[j-1]) {
+                distance[i][j] = distance[i-1][j-1];
+            } else {
+                distance[i][j] = min(distance[i  ][j-1],
+                                     distance[i-1][j  ],
+                                     distance[i-1][j-1]) + 1;
+            }
+        }
+    }
+
+    // answer is the last element
+    return distance[n][m];
+}
+
+FunctionScores functionScores(FunctionVec& functions, std::string& query) {
+    FunctionScores scores;
+    for(auto& fn : functions) {
+        scores[fn.full_repr()] = lev(fn.normal(), query);
+    }
+    return scores;
+}
+
+int scoreComp(std::pair<std::string, int> a, std::pair<std::string, int> b) {
+    return a.second < b.second;
+}
+
+std::string bestMatch(FunctionScores& scores) {
+    return (*std::min_element(
+                scores.begin(),
+                scores.end(),
+                scoreComp)).first;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 4) {
         usage(argv);
         return 0;
     }
+
+    std::string filename(argv[1]);
+    std::string mode(argv[2]);
+    std::string query(argv[3]);
 
     CXIndex index = clang_createIndex(0, 0);
     if (index == 0) {
@@ -313,15 +398,16 @@ int main(int argc, char** argv) {
         fprintf(stderr, "ERROR: clang_parseTranslationUnit() failed\n");
     }
 
-    printDiagnostics(translation_unit);
-
     CXCursor root_cursor = clang_getTranslationUnitCursor(translation_unit);
 
     EntityAggregate entities;
     unsigned int res = clang_visitChildren(root_cursor, *cursorVisitor, (CXClientData*)&entities);
-    printFunctions(entities.functions);
-    printTypedefs(entities.typedefs);
-    printStructs(entities.structs);
+    // printFunctions(entities.functions);
+    // printTypedefs(entities.typedefs);
+    // printStructs(entities.structs);
+
+    FunctionScores scores = functionScores(entities.functions, query);
+    printf("%s\n", bestMatch(scores).c_str());
 
     clang_disposeTranslationUnit(translation_unit);
     clang_disposeIndex(index);

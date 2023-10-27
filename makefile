@@ -1,12 +1,12 @@
 # install dependencies (Ubuntu/Debian): `apt install libclang-dev`
 
 CXX=clang++
-CFLAGS=-I/usr/lib/llvm-10/include/
+CFLAGS=-I/usr/lib/llvm-10/include/ -std=c++17
 LDFLAGS=-lclang
 
 all:	seapeapea
 
-seapeapea:	main.cpp
+seapeapea:	main.cpp makefile
 	$(CXX) -o $@ main.cpp $(CFLAGS) $(LDFLAGS)
 
 clean:
