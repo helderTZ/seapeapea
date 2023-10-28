@@ -11,7 +11,6 @@
 #include <algorithm>
 
 #include <clang-c/Index.h>
-#include <clang-c/Platform.h>
 
 struct Arg {
     std::string arg_name;
@@ -86,6 +85,9 @@ struct Function {
 };
 
 struct Typedef {
+    SourceLoc source;
+    std::string alias;
+    std::string aliased;
 
     Typedef() = default;
 
@@ -97,9 +99,9 @@ struct Typedef {
     :   source(filename_, line_, col_),
         alias(alias_), aliased(aliased_) {}
 
-    SourceLoc source;
-    std::string alias;
-    std::string aliased;
+    std::string repr() const {
+        return alias + " :: " + aliased;
+    }
 };
 
 struct Attribute {
@@ -123,6 +125,18 @@ struct Struct {
 
     void add_attr(const char* attr_name, const char* attr_type) {
         attributes.push_back(Attribute{attr_name, attr_type});
+    }
+
+    std::string repr() const {
+        std::string representation = struct_name + " {";
+        if (attributes.size() > 0) {
+            representation += attributes[0].attr_name + " :: " + attributes[0].attr_type;
+        }
+        for(int i = 1; i < attributes.size(); ++i) {
+            representation += ", " + attributes[i].attr_name + " :: " + attributes[i].attr_type;
+        }
+        representation += "}";
+        return representation;
     }
 };
 
@@ -165,32 +179,14 @@ void usage(char** argv) {
     printf("If no query is provided, just print\n");
 }
 
-void printLocation(SourceLoc& loc) {
-    printf("%s:%d:%d:",
-        loc.filename.c_str(),
-        loc.line,
-        loc.col);
-}
-
 void printFunctions(FunctionVec& functions) {
     printf("==================================\n");
     printf("              FUNCTIONS           \n");
     printf("==================================\n");
     for (auto& fn : functions) {
-        printLocation(fn.source);
-        printf(" %s :: %s(",
-            fn.function_name.c_str(),
-            fn.return_type.c_str());
-        if (fn.args.size() > 0) {
-            printf("%s", fn.args[0].arg_type.c_str());
-                // fn.args[0].arg_name.c_str());
-            for (int i = 1; i < fn.args.size(); ++i) {
-                printf(", %s", fn.args[i].arg_type.c_str());
-                    // fn.args[i].arg_name.c_str());
-            }
-        }
-        printf(")\n");
+        printf("%s %s\n", fn.source.repr().c_str(), fn.repr().c_str());
     }
+    printf("\n");
 }
 
 void printTypedefs(TypedefVec& typedefs) {
@@ -198,9 +194,9 @@ void printTypedefs(TypedefVec& typedefs) {
     printf("              TYPEDEFS            \n");
     printf("==================================\n");
     for (auto& tdef : typedefs) {
-        printLocation(tdef.source);
-        printf(" %s :: %s\n", tdef.alias.c_str(), tdef.aliased.c_str());
+        printf("%s %s\n", tdef.source.repr().c_str(), tdef.repr().c_str());
     }
+    printf("\n");
 }
 
 void printStructs(StructVec& structs) {
@@ -208,16 +204,9 @@ void printStructs(StructVec& structs) {
     printf("              STRUCTS             \n");
     printf("==================================\n");
     for (auto& strukt : structs) {
-        printLocation(strukt.source);
-        printf(" %s :: {", strukt.struct_name.c_str());
-        if (strukt.attributes.size() > 0) {
-            printf("%s", strukt.attributes[0].attr_type.c_str());
-            for (int i = 1; i < strukt.attributes.size(); ++i) {
-                printf(", %s", strukt.attributes[i].attr_type.c_str());
-            }
-        }
-        printf("}\n");
+        printf("%s %s\n", strukt.source.repr().c_str(), strukt.repr().c_str());
     }
+    printf("\n");
 }
 
 CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
@@ -236,7 +225,7 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         clang_getPresumedLocation(location, &filename, &line, &col);
 
         CXType return_type = clang_getCursorResultType(cursor);
-        CXString return_spelling = clang_getTypeKindSpelling(return_type.kind);
+        CXString return_spelling = clang_getTypeSpelling(return_type);
 
         ((EntityAggregate*)client_data)->functions.push_back(Function{
             clang_getCString(filename), line, col,
@@ -394,13 +383,7 @@ int main(int argc, char** argv) {
     //                        unsigned num_unsaved_files,
     //                        unsigned options);
     CXTranslationUnit translation_unit = clang_parseTranslationUnit(
-        index,
-        filename.c_str(),
-        NULL,
-        0,
-        NULL,
-        0,
-        CXTranslationUnit_None);
+        index, filename.c_str(), NULL, 0, NULL, 0, CXTranslationUnit_None);
     if (translation_unit == 0) {
         fprintf(stderr, "ERROR: clang_parseTranslationUnit() failed\n");
     }
@@ -409,12 +392,13 @@ int main(int argc, char** argv) {
 
     EntityAggregate entities;
     unsigned int res = clang_visitChildren(root_cursor, *cursorVisitor, (CXClientData*)&entities);
-    // printFunctions(entities.functions);
-    // printTypedefs(entities.typedefs);
-    // printStructs(entities.structs);
+    printFunctions(entities.functions);
+    printTypedefs(entities.typedefs);
+    printStructs(entities.structs);
 
     ScoreVec scores = functionScores(entities.functions, query);
     sortScores(scores);
+    printf("======== Best matches ========\n");
     for (int i = 0; i < 10; ++i) {
         printf("%s\n", scores[i].id.c_str());
     }
