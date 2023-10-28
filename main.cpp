@@ -126,10 +126,15 @@ struct Struct {
     }
 };
 
+struct Score {
+    std::string id;
+    int score;
+};
+
 typedef std::vector<Function> FunctionVec;
 typedef std::vector<Typedef> TypedefVec;
 typedef std::vector<Struct> StructVec;
-typedef std::unordered_map<std::string, int> FunctionScores;
+typedef std::vector<Score> ScoreVec;
 
 struct EntityAggregate {
     FunctionVec functions;
@@ -328,6 +333,7 @@ int lev(std::string_view a, std::string_view b) {
     for (int i = 0; i < n+1; ++i) { distance[i][0] = i; }
     for (int j = 0; j < m+1; ++j) { distance[0][j] = j; }
 
+    // calculate the rest of the matrix
     for (int i = 1; i < n+1; ++i) {
         for (int j = 1; j < m+1; ++j) {
             if (a[i-1] == b[j-1]) {
@@ -344,30 +350,24 @@ int lev(std::string_view a, std::string_view b) {
     return distance[n][m];
 }
 
-FunctionScores functionScores(FunctionVec& functions, std::string& query) {
-    FunctionScores scores;
+ScoreVec functionScores(const FunctionVec& functions, const std::string& query) {
+    ScoreVec scores;
+    scores.reserve(functions.size());
     for(auto& fn : functions) {
-        scores[fn.full_repr()] = lev(fn.normal(), query);
+        scores.push_back({ fn.full_repr(), lev(fn.normal(), query) });
     }
     return scores;
 }
 
-int scoreComp(std::pair<std::string, int> a, std::pair<std::string, int> b) {
-    return a.second < b.second;
+std::string bestMatch(const ScoreVec& scores) {
+    return (*std::min_element(scores.begin(), scores.end(),
+                [](auto& a, auto& b){ return a.score < b.score; })
+            ).id;
 }
 
-std::string bestMatch(const FunctionScores& scores) {
-    return (*std::min_element(
-                scores.begin(),
-                scores.end(),
-                scoreComp)).first;
-}
-
-std::vector<std::pair<std::string, int>> sortScores(FunctionScores& scores) {
-    std::vector<std::pair<std::string, int>> sorted(scores.begin(), scores.end());
-    std::sort(sorted.begin(), sorted.end(),
-        [](auto& a, auto& b){ return a.second < b.second; });
-    return sorted;
+void sortScores(ScoreVec& scores) {
+    std::sort(scores.begin(), scores.end(),
+        [](auto& a, auto& b){ return a.score < b.score; });
 }
 
 int main(int argc, char** argv) {
@@ -413,10 +413,10 @@ int main(int argc, char** argv) {
     // printTypedefs(entities.typedefs);
     // printStructs(entities.structs);
 
-    FunctionScores scores = functionScores(entities.functions, query);
-    auto sorted_scores = sortScores(scores);
+    ScoreVec scores = functionScores(entities.functions, query);
+    sortScores(scores);
     for (int i = 0; i < 10; ++i) {
-        printf("%s\n", sorted_scores[i].first.c_str());
+        printf("%s\n", scores[i].id.c_str());
     }
     // printf("%s\n", bestMatch(scores).c_str());
 
