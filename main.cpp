@@ -218,12 +218,12 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
     CXCursorKind cursor_kind = clang_getCursorKind(cursor);
     CXString cursor_spelling = clang_getCursorSpelling(cursor);
 
-    if (cursor_kind == CXCursor_FunctionDecl) {
-        CXSourceLocation location = clang_getCursorLocation(cursor);
-        CXString filename;
-        unsigned int line, col;
-        clang_getPresumedLocation(location, &filename, &line, &col);
+    CXSourceLocation location = clang_getCursorLocation(cursor);
+    CXString filename;
+    unsigned int line, col;
+    clang_getPresumedLocation(location, &filename, &line, &col);
 
+    if (cursor_kind == CXCursor_FunctionDecl) {
         CXType return_type = clang_getCursorResultType(cursor);
         CXString return_spelling = clang_getTypeSpelling(return_type);
 
@@ -238,13 +238,7 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         return CXChildVisit_Continue;
     }
     else if (cursor_kind == CXCursor_TypedefDecl) {
-        CXSourceLocation location = clang_getCursorLocation(cursor);
-        CXString filename;
-        unsigned int line, col;
-        clang_getPresumedLocation(location, &filename, &line, &col);
-
-        CXType type = clang_getCursorType(cursor);
-        CXString typedef_name = clang_getTypedefName(type);
+        CXString typedef_name = clang_getTypedefName(clang_getCursorType(cursor));
         CXString typedef_type = clang_getTypeSpelling(clang_getTypedefDeclUnderlyingType(cursor));
 
         ((EntityAggregate*)client_data)->typedefs.push_back(Typedef{
@@ -256,13 +250,6 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         return CXChildVisit_Continue;
     }
     else if (cursor_kind == CXCursor_StructDecl) {
-        CXSourceLocation location = clang_getCursorLocation(cursor);
-        CXString filename;
-        unsigned int line, col;
-        clang_getPresumedLocation(location, &filename, &line, &col);
-
-        CXCursorKind kind = clang_getCursorKind(cursor);
-        CXType type = clang_getCursorType(cursor);
         CXString struct_name = clang_getCursorSpelling(cursor);
 
         ((EntityAggregate*)client_data)->structs.push_back(Struct {
