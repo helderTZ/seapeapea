@@ -56,15 +56,7 @@ struct Function {
     }
 
     std::string repr() const {
-        std::string representation = function_name + " :: " + return_type + " ( ";
-        if (args.size() > 0) {
-            representation += args[0].arg_type;
-        }
-        for(int i = 1; i < args.size(); ++i) {
-            representation += ", " + args[i].arg_type;
-        }
-        representation += " )";
-        return representation;
+        return function_name + " :: " + normal();
     }
 
     std::string full_repr() const {
@@ -72,14 +64,12 @@ struct Function {
     }
 
     std::string normal() const {
-        std::string representation = return_type + "(";
-        if (args.size() > 0) {
-            representation += args[0].arg_type;
+        std::string representation = return_type + " ( ";
+        for(int i = 0; i < args.size(); ++i) {
+            if (i > 0) representation += ", ";
+            representation += args[i].arg_type;
         }
-        for(int i = 1; i < args.size(); ++i) {
-            representation += ", " + args[i].arg_type;
-        }
-        representation += ")";
+        representation += " ) ";
         return representation;
     }
 };
@@ -133,11 +123,9 @@ struct Struct {
 
     std::string repr() const {
         std::string representation = struct_name + " { ";
-        if (attributes.size() > 0) {
-            representation += attributes[0].attr_name + " :: " + attributes[0].attr_type;
-        }
-        for(int i = 1; i < attributes.size(); ++i) {
-            representation += ", " + attributes[i].attr_name + " :: " + attributes[i].attr_type;
+        for(int i = 0; i < attributes.size(); ++i) {
+            if (i > 0) representation += ", ";
+            representation += attributes[i].attr_name + " :: " + attributes[i].attr_type;
         }
         representation += " }";
         return representation;
