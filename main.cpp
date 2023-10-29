@@ -56,14 +56,14 @@ struct Function {
     }
 
     std::string repr() const {
-        std::string representation = function_name + " :: " + return_type + "(";
+        std::string representation = function_name + " :: " + return_type + " ( ";
         if (args.size() > 0) {
             representation += args[0].arg_type;
         }
         for(int i = 1; i < args.size(); ++i) {
             representation += ", " + args[i].arg_type;
         }
-        representation += ")";
+        representation += " )";
         return representation;
     }
 
@@ -102,6 +102,10 @@ struct Typedef {
     std::string repr() const {
         return alias + " :: " + aliased;
     }
+
+    std::string normal() const {
+        return alias;
+    }
 };
 
 struct Attribute {
@@ -128,15 +132,19 @@ struct Struct {
     }
 
     std::string repr() const {
-        std::string representation = struct_name + " {";
+        std::string representation = struct_name + " { ";
         if (attributes.size() > 0) {
             representation += attributes[0].attr_name + " :: " + attributes[0].attr_type;
         }
         for(int i = 1; i < attributes.size(); ++i) {
             representation += ", " + attributes[i].attr_name + " :: " + attributes[i].attr_type;
         }
-        representation += "}";
+        representation += " }";
         return representation;
+    }
+
+    std::string normal() const {
+        return struct_name;
     }
 };
 
@@ -335,6 +343,24 @@ ScoreVec functionScores(const FunctionVec& functions, const std::string& query) 
     return scores;
 }
 
+ScoreVec typedefScores(const TypedefVec& typedefs, const std::string& query) {
+    ScoreVec scores;
+    scores.reserve(typedefs.size());
+    for(auto& tdef : typedefs) {
+        scores.push_back({ tdef.repr(), lev(tdef.normal(), query) });
+    }
+    return scores;
+}
+
+ScoreVec structScores(const StructVec& structs, const std::string& query) {
+    ScoreVec scores;
+    scores.reserve(structs.size());
+    for(auto& strukt : structs) {
+        scores.push_back({ strukt.repr(), lev(strukt.normal(), query) });
+    }
+    return scores;
+}
+
 std::string bestMatch(const ScoreVec& scores) {
     return (*std::min_element(scores.begin(), scores.end(),
                 [](auto& a, auto& b){ return a.score < b.score; })
@@ -379,14 +405,21 @@ int main(int argc, char** argv) {
 
     EntityAggregate entities;
     unsigned int res = clang_visitChildren(root_cursor, *cursorVisitor, (CXClientData*)&entities);
-    printFunctions(entities.functions);
-    printTypedefs(entities.typedefs);
-    printStructs(entities.structs);
+    // printFunctions(entities.functions);
+    // printTypedefs(entities.typedefs);
+    // printStructs(entities.structs);
 
-    ScoreVec scores = functionScores(entities.functions, query);
+    ScoreVec scores;
+    if (mode == "-f") {
+        scores = functionScores(entities.functions, query);
+    } else if (mode == "-t") {
+        scores = typedefScores(entities.typedefs, query);
+    } else if (mode == "-s") {
+        scores = structScores(entities.structs, query);
+    }
     sortScores(scores);
     printf("======== Best matches ========\n");
-    for (int i = 0; i < 10; ++i) {
+    for (size_t i = 0; i < std::min((size_t)10, scores.size()); ++i) {
         printf("%s\n", scores[i].id.c_str());
     }
     // printf("%s\n", bestMatch(scores).c_str());
