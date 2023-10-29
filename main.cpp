@@ -1,6 +1,3 @@
-// build me with: `clang main.cpp -I/usr/lib/llvm-10/include/ -lclang`
-// Adapted from: https://gist.github.com/raphaelmor/3150866
-
 #include <cstdio>
 #include <climits>
 #include <cstring>
@@ -11,6 +8,9 @@
 #include <algorithm>
 
 #include <clang-c/Index.h>
+
+#define STB_C_LEXER_IMPLEMENTATION
+#include "stb_c_lexer.h"
 
 struct Arg {
     std::string arg_name;
@@ -66,7 +66,7 @@ struct Function {
     std::string normal() const {
         std::string representation = return_type + " ( ";
         for(int i = 0; i < args.size(); ++i) {
-            if (i > 0) representation += ", ";
+            if (i > 0) representation += " , ";
             representation += args[i].arg_type;
         }
         representation += " ) ";
@@ -145,6 +145,7 @@ typedef std::vector<Function> FunctionVec;
 typedef std::vector<Typedef> TypedefVec;
 typedef std::vector<Struct> StructVec;
 typedef std::vector<Score> ScoreVec;
+typedef std::vector<std::string> TokenVec;
 
 struct EntityAggregate {
     FunctionVec functions;
@@ -360,6 +361,38 @@ void sortScores(ScoreVec& scores) {
         [](auto& a, auto& b){ return a.score < b.score; });
 }
 
+TokenVec tokenizeQuery(std::string& query) {
+    TokenVec tokens;
+
+    stb_lexer lexer;
+    char string_storage[1024];
+    // void stb_c_lexer_init(stb_lexer *lexer,
+    //                       const char *input_stream,
+    //                       const char *input_stream_end,
+    //                       char *string_store,
+    //                       int store_length);
+    stb_c_lexer_init(&lexer, query.c_str(), query.c_str() + query.size(), string_storage, 1024);
+
+    while (stb_c_lexer_get_token(&lexer)) {
+        if (lexer.token < CLEX_eof) {
+            tokens.push_back(std::string(1, (char)lexer.token));
+        }
+        else if (lexer.token == CLEX_id) {
+            tokens.push_back(std::string(lexer.string));
+        }
+    }
+
+    return tokens;
+}
+
+std::string normalizeQuery(TokenVec&& tokens) {
+    std::string normalized_query;
+    for (auto& tok : tokens) {
+        normalized_query += tok + " ";
+    }
+    return normalized_query;
+}
+
 int main(int argc, char** argv) {
     if (argc < 4) {
         usage(argv);
@@ -397,13 +430,15 @@ int main(int argc, char** argv) {
     // printTypedefs(entities.typedefs);
     // printStructs(entities.structs);
 
+    std::string normalized_query = normalizeQuery(tokenizeQuery(query));
+
     ScoreVec scores;
     if (mode == "-f") {
-        scores = functionScores(entities.functions, query);
+        scores = functionScores(entities.functions, normalized_query);
     } else if (mode == "-t") {
-        scores = typedefScores(entities.typedefs, query);
+        scores = typedefScores(entities.typedefs, normalized_query);
     } else if (mode == "-s") {
-        scores = structScores(entities.structs, query);
+        scores = structScores(entities.structs, normalized_query);
     }
     sortScores(scores);
     printf("======== Best matches ========\n");
