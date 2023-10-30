@@ -1,9 +1,7 @@
 #include <cstdio>
-#include <climits>
 #include <cstring>
 #include <string>
 #include <vector>
-#include <unordered_map>
 #include <string_view>
 #include <algorithm>
 
@@ -136,6 +134,51 @@ struct Struct {
     }
 };
 
+struct Class {
+    SourceLoc source;
+    std::string class_name;
+    std::vector<Attribute> attributes;
+    std::vector<Function> methods;
+
+    Class() = default;
+
+    Class(const char* filename_,
+           unsigned int line_,
+           unsigned int col_,
+           const char* class_name_)
+    :   source(filename_, line_, col_),
+        class_name(class_name_) {}
+
+    void add_attr(const char* attr_name, const char* attr_type) {
+        attributes.push_back(Attribute{attr_name, attr_type});
+    }
+
+    void add_method(
+        const char* filename_, unsigned int line_, unsigned int col_,
+        std::string return_type_, std::string method_name_)
+    {
+        methods.push_back(Function{filename_, line_, col_, return_type_.c_str(), method_name_.c_str()});
+    }
+
+    std::string repr() const {
+        std::string representation = class_name + " { ";
+        for(int i = 0; i < attributes.size(); ++i) {
+            if (i > 0) representation += ", ";
+            representation += attributes[i].attr_name + " :: " + attributes[i].attr_type;
+        }
+        for(int i = 0; i < methods.size(); ++i) {
+            if (i > 0) representation += ", ";
+            representation += methods[i].repr();
+        }
+        representation += " }";
+        return representation;
+    }
+
+    std::string normal() const {
+        return class_name;
+    }
+};
+
 struct Score {
     std::string id;
     int score;
@@ -144,6 +187,7 @@ struct Score {
 typedef std::vector<Function> FunctionVec;
 typedef std::vector<Typedef> TypedefVec;
 typedef std::vector<Struct> StructVec;
+typedef std::vector<Class> ClassVec;
 typedef std::vector<Score> ScoreVec;
 typedef std::vector<std::string> TokenVec;
 
@@ -151,6 +195,7 @@ struct EntityAggregate {
     FunctionVec functions;
     TypedefVec typedefs;
     StructVec structs;
+    ClassVec classes;
 };
 
 template<typename T>
@@ -161,47 +206,26 @@ typename T::value_type* last(T* container) {
 CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
 CXChildVisitResult functionDeclVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
 CXChildVisitResult attributeDeclVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data);
-void printLocation(SourceLoc& loc);
-void printFunctions(FunctionVec& functions);
-void printTypedefs(TypedefVec& typedefs);
-void printStructs(StructVec& structs);
 
 void usage(char** argv) {
-    printf("USAGE: %s <srcfile> [-f|-t|-s] [query]\n", argv[0]);
+    printf("USAGE: %s <srcfile> [-f|-t|-s|-c|-p] [query]\n", argv[0]);
     printf("            srcfile : source or header file to search in\n");
     printf("            -f      : search for functions\n");
     printf("            -t      : search for typedefs\n");
     printf("            -s      : search for structs\n");
+    printf("            -c      : search for classes\n");
+    printf("            -p      : don't query, just print everything\n");
     printf("            query   : the query to search for\n");
     printf("If no query is provided, just print\n");
 }
 
-void printFunctions(FunctionVec& functions) {
+template<typename T>
+void printCX(const T& ts, const char* header="") {
     printf("==================================\n");
-    printf("              FUNCTIONS           \n");
+    printf("              %s           \n", header);
     printf("==================================\n");
-    for (auto& fn : functions) {
-        printf("%s %s\n", fn.source.repr().c_str(), fn.repr().c_str());
-    }
-    printf("\n");
-}
-
-void printTypedefs(TypedefVec& typedefs) {
-    printf("==================================\n");
-    printf("              TYPEDEFS            \n");
-    printf("==================================\n");
-    for (auto& tdef : typedefs) {
-        printf("%s %s\n", tdef.source.repr().c_str(), tdef.repr().c_str());
-    }
-    printf("\n");
-}
-
-void printStructs(StructVec& structs) {
-    printf("==================================\n");
-    printf("              STRUCTS             \n");
-    printf("==================================\n");
-    for (auto& strukt : structs) {
-        printf("%s %s\n", strukt.source.repr().c_str(), strukt.repr().c_str());
+    for (auto& t : ts) {
+        printf("%s %s\n", t.source.repr().c_str(), t.repr().c_str());
     }
     printf("\n");
 }
@@ -255,6 +279,17 @@ CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor parent, CXClientData 
         });
 
         clang_visitChildren(cursor, *attributeDeclVisitor, client_data);
+    }
+    else if (cursor_kind == CXCursor_ClassDecl) {
+        CXString class_name = clang_getCursorSpelling(cursor);
+
+        ((EntityAggregate*)client_data)->classes.push_back(Class {
+            clang_getCString(filename), line, col,
+            clang_getCString(class_name)
+        });
+
+        clang_visitChildren(cursor, *attributeDeclVisitor, client_data);
+        clang_visitChildren(cursor, *functionDeclVisitor, client_data);
     }
 
     return CXChildVisit_Recurse;
@@ -323,7 +358,7 @@ int lev(std::string_view a, std::string_view b) {
     return distance[n][m];
 }
 
-ScoreVec functionScores(const FunctionVec& functions, const std::string& query) {
+ScoreVec getScores(const FunctionVec& functions, const std::string& query) {
     ScoreVec scores;
     scores.reserve(functions.size());
     for(auto& fn : functions) {
@@ -332,20 +367,12 @@ ScoreVec functionScores(const FunctionVec& functions, const std::string& query) 
     return scores;
 }
 
-ScoreVec typedefScores(const TypedefVec& typedefs, const std::string& query) {
+template<typename T>
+ScoreVec getScores(const T& ts, const std::string& query) {
     ScoreVec scores;
-    scores.reserve(typedefs.size());
-    for(auto& tdef : typedefs) {
-        scores.push_back({ tdef.repr(), lev(tdef.normal(), query) });
-    }
-    return scores;
-}
-
-ScoreVec structScores(const StructVec& structs, const std::string& query) {
-    ScoreVec scores;
-    scores.reserve(structs.size());
-    for(auto& strukt : structs) {
-        scores.push_back({ strukt.repr(), lev(strukt.normal(), query) });
+    scores.reserve(ts.size());
+    for(auto& t : ts) {
+        scores.push_back({ t.repr(), lev(t.normal(), query) });
     }
     return scores;
 }
@@ -426,26 +453,29 @@ int main(int argc, char** argv) {
 
     EntityAggregate entities;
     unsigned int res = clang_visitChildren(root_cursor, *cursorVisitor, (CXClientData*)&entities);
-    // printFunctions(entities.functions);
-    // printTypedefs(entities.typedefs);
-    // printStructs(entities.structs);
 
-    std::string normalized_query = normalizeQuery(tokenizeQuery(query));
+    if (mode == "-p") {
+        printCX(entities.functions, "FUNCTIONS");
+        printCX(entities.typedefs, "TYPEDEFS");
+        printCX(entities.structs, "STRUCTS");
+        printCX(entities.classes, "CLASSES");
+    }
+    else {
+        std::string normalized_query = normalizeQuery(tokenizeQuery(query));
 
-    ScoreVec scores;
-    if (mode == "-f") {
-        scores = functionScores(entities.functions, normalized_query);
-    } else if (mode == "-t") {
-        scores = typedefScores(entities.typedefs, normalized_query);
-    } else if (mode == "-s") {
-        scores = structScores(entities.structs, normalized_query);
+        ScoreVec scores;
+        if (mode == "-f")      { scores = getScores(entities.functions, normalized_query); }
+        else if (mode == "-t") { scores = getScores(entities.typedefs, normalized_query); }
+        else if (mode == "-s") { scores = getScores(entities.structs, normalized_query); }
+        else if (mode == "-c") { scores = getScores(entities.classes, normalized_query); }
+
+        sortScores(scores);
+        printf("======== Best matches ========\n");
+        for (size_t i = 0; i < std::min((size_t)10, scores.size()); ++i) {
+            printf("%s\n", scores[i].id.c_str());
+        }
+        // printf("%s\n", bestMatch(scores).c_str());
     }
-    sortScores(scores);
-    printf("======== Best matches ========\n");
-    for (size_t i = 0; i < std::min((size_t)10, scores.size()); ++i) {
-        printf("%s\n", scores[i].id.c_str());
-    }
-    // printf("%s\n", bestMatch(scores).c_str());
 
     clang_disposeTranslationUnit(translation_unit);
     clang_disposeIndex(index);
