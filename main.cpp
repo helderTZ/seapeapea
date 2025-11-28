@@ -220,12 +220,13 @@ void usage(char** argv) {
 }
 
 template<typename T>
-void printCX(const T& ts, const char* header="") {
+void printCX(const T& ts, const char* header="", bool print_filename=true) {
     printf("==================================\n");
     printf("              %s           \n", header);
     printf("==================================\n");
     for (auto& t : ts) {
-        printf("%s %s\n", t.source.repr().c_str(), t.repr().c_str());
+        if (print_filename) printf("%s %s\n", t.source.repr().c_str(), t.repr().c_str());
+        else  printf("%s\n",t.repr().c_str());
     }
     printf("\n");
 }
@@ -388,6 +389,23 @@ void sortScores(ScoreVec& scores) {
         [](auto& a, auto& b){ return a.score < b.score; });
 }
 
+void printBestScores(const EntityAggregate& entities,
+                     const std::string& mode,
+                     const std::string& normalized_query) {
+    ScoreVec scores;
+    if (mode == "-f")      { scores = getScores(entities.functions, normalized_query); }
+    else if (mode == "-t") { scores = getScores(entities.typedefs, normalized_query); }
+    else if (mode == "-s") { scores = getScores(entities.structs, normalized_query); }
+    else if (mode == "-c") { scores = getScores(entities.classes, normalized_query); }
+
+    sortScores(scores);
+    printf("======== Best matches ========\n");
+    for (size_t i = 0; i < std::min((size_t)10, scores.size()); ++i) {
+        printf("%s\n", scores[i].id.c_str());
+    }
+    // printf("%s\n", bestMatch(scores).c_str());
+}
+
 TokenVec tokenizeQuery(std::string& query) {
     TokenVec tokens;
 
@@ -421,14 +439,14 @@ std::string normalizeQuery(TokenVec&& tokens) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 4) {
+    if (argc < 3) {
         usage(argv);
         return 0;
     }
 
     std::string filename(argv[1]);
     std::string mode(argv[2]);
-    std::string query(argv[3]);
+    std::string query = argc == 4 ? argv[3] : "";
 
     CXIndex index = clang_createIndex(0, 0);
     if (index == 0) {
@@ -454,27 +472,22 @@ int main(int argc, char** argv) {
     EntityAggregate entities;
     unsigned int res = clang_visitChildren(root_cursor, *cursorVisitor, (CXClientData*)&entities);
 
+    std::string normalized_query = normalizeQuery(tokenizeQuery(query));
     if (mode == "-p") {
-        printCX(entities.functions, "FUNCTIONS");
-        printCX(entities.typedefs, "TYPEDEFS");
-        printCX(entities.structs, "STRUCTS");
-        printCX(entities.classes, "CLASSES");
+        printCX(entities.functions, "FUNCTIONS", false);
+        printCX(entities.typedefs, "TYPEDEFS", false);
+        printCX(entities.structs, "STRUCTS", false);
+        printCX(entities.classes, "CLASSES", false);
     }
     else {
-        std::string normalized_query = normalizeQuery(tokenizeQuery(query));
-
-        ScoreVec scores;
-        if (mode == "-f")      { scores = getScores(entities.functions, normalized_query); }
-        else if (mode == "-t") { scores = getScores(entities.typedefs, normalized_query); }
-        else if (mode == "-s") { scores = getScores(entities.structs, normalized_query); }
-        else if (mode == "-c") { scores = getScores(entities.classes, normalized_query); }
-
-        sortScores(scores);
-        printf("======== Best matches ========\n");
-        for (size_t i = 0; i < std::min((size_t)10, scores.size()); ++i) {
-            printf("%s\n", scores[i].id.c_str());
+        if (normalized_query.empty()) {
+            if (mode == "-f") { printCX(entities.functions, "FUNCTIONS", false);  }
+            else if (mode == "-t") { printCX(entities.typedefs, "TYPEDEFS", false);  }
+            else if (mode == "-s") { printCX(entities.structs, "STRUCTS", false);  }
+            else if (mode == "-c") { printCX(entities.classes, "CLASSES", false);  }
+        } else {
+            printBestScores(entities, mode, normalized_query);
         }
-        // printf("%s\n", bestMatch(scores).c_str());
     }
 
     clang_disposeTranslationUnit(translation_unit);
